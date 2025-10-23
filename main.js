@@ -106,7 +106,7 @@ async function createWindow(fileName) {
 		let height = 200;
 			
 		try {
-			const dimensions = await imageSizeFromFile('files/' + file);
+			const dimensions = await imageSizeFromFile('files/' + fileName);
 			width = dimensions.width;
 			height = dimensions.height;
 		} catch (error) {
@@ -128,6 +128,8 @@ function createExistsFileWindow() {
 			console.error('Error reading files directory:', err);
 			return;
 		}
+
+		files = files.filter(item => !(/(^|\/)\.[^\/\.]/g).test(item));
 
 		console.log(`Found ${files.length} files. Creating windows...`);
 
@@ -159,12 +161,7 @@ app.whenReady().then(() => {
 	let githubIcon = nativeImage.createFromPath('assets/github.png')
 	githubIcon = githubIcon.resize({ width: 16, height: 16 })
 
-	let appIcon = nativeImage.createFromPath('assets/icon.ico')
-	appIcon = appIcon.resize({ width: 16, height: 16 })
-
 	const contextMenu = Menu.buildFromTemplate([
-		{ label: 'App Menu', type: 'normal', icon: appIcon, enabled: false },
-		{ type: 'separator' },
 		{ label: 'Settings', type: 'normal', click: () => { createMenuWindow() } },
 		{ label: 'GitHub', type: 'normal', icon: githubIcon, click: () => { 
 			shell.openExternal('https://github.com/nopalherlangga')
@@ -221,10 +218,7 @@ ipcMain.on('rescale-image', (event, key, scale) => {
 	const newWidth = Math.floor((scale / 100) * config.width);
 	const newHeight = Math.floor((scale / 100) * config.height);
 
-	store.set(key, {
-		...config,
-		scale: scale
-	});
+	store.set(key, { ...config, scale });
 
 	win.setBounds({
 		width: newWidth,
@@ -233,7 +227,8 @@ ipcMain.on('rescale-image', (event, key, scale) => {
 });
 
 ipcMain.on('request-files', event => {
-	const files = fs.readdirSync('files');
+	let files = fs.readdirSync('files');
+	files = files.filter(item => !(/(^|\/)\.[^\/\.]/g).test(item));
 	const result = files.map(file => ({ id: getHash(file), name: file }));
 	event.reply('receive-files', result);
 });

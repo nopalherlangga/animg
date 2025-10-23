@@ -1,7 +1,5 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-console.log(contextBridge)
-
 contextBridge.exposeInMainWorld('electronAPI', {
     onReceiveImage: (callback) => {
         ipcRenderer.on('receive-image', (event, data) => callback(data));

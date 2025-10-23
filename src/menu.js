@@ -9,6 +9,7 @@ window.addEventListener('DOMContentLoaded', () => {
 let selectedFileId;
 const placeholder = document.getElementById('placeholder');
 const settings = document.getElementById('settings'); 
+const activeSettings = document.getElementById('active-settings');
 const scaleInput = document.getElementById('scale-range');
 const toggleActive = document.getElementById('toggle-active');
 const container = document.getElementById('items');
@@ -51,12 +52,14 @@ window.electronAPI.onReceiveConfig(config => {
     toggleActive.parentElement.classList.toggle('active', config.active);
     scaleInput.value = config.scale;
     document.getElementById('scale-value').innerText = config.scale;
+    activeSettings.style.display = config.active ? 'block' : 'none';
     settings.style.display = 'block';
     placeholder.style.display = 'none';
 });
 
 toggleActive.addEventListener('click', e => {
     e.currentTarget.parentElement.classList.toggle('active');
+    activeSettings.style.display = e.currentTarget.checked ? 'block' : 'none';
     window.electronAPI.toggleActive(selectedFileId, e.currentTarget.checked);
 });
 
