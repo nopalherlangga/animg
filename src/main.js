@@ -95,6 +95,7 @@ function spawnWindow(key, config) {
 	});
 
 	win.on('closed', () => {
+		const key = win.hashId;
 		console.log('Window closed for', key);
 		clearTimeout(timer);
 		const value = store.get(key);
@@ -268,13 +269,10 @@ ipcMain.on('toggle-active', (event, key, isActive) => {
 	console.log('Toggling active for', key, 'to', isActive);
 
 	const config = store.get(key);
-	console.log(config)
 	const newConfig = {
 		...config,
 		active: isActive
 	}
-
-	console.log(newConfig)
 	
 	store.set(key, newConfig);
 	const win = windows.get(key);
