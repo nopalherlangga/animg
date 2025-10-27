@@ -3,17 +3,19 @@ import {
 	BrowserWindow,
 	ipcMain,
 	Menu,
-	nativeImage,
 	shell,
 	Tray,
 	dialog,
+	nativeImage,
 } from 'electron';
-
 import Store from 'electron-store';
 import { imageSizeFromFile } from 'image-size/fromFile';
-import crypto from 'crypto';
-import path from 'path';
-import fs from 'fs';
+import crypto from 'node:crypto';
+import path from 'node:path';
+import fs from 'node:fs';
+import started from 'electron-squirrel-startup';
+
+if (started) app.quit();
 
 const store = new Store();
 const windows = new Map();
@@ -39,11 +41,22 @@ function getHash(string) {
 	.digest('hex');
 }
 
+function getFilesDir() {
+	const devDir = path.resolve('files'); // dev (vite)
+    const userDir = path.join(app.getPath('userData'), 'ImageSaved'); // packaged writable folder
+
+    if (app.isPackaged) {
+        if (!fs.existsSync(userDir)) fs.mkdirSync(userDir, { recursive: true });
+        return userDir;
+    }
+    return devDir;
+}
+
 function spawnWindow(key, config) {
 	console.log('Spawning window for', key, 'with config:', config);
 
 	const win = new BrowserWindow({
-		icon: 'assets/icon.ico',
+		icon: 'public/icon.ico',
 		alwaysOnTop: true,
 		transparent: true,
 		frame: false,
@@ -53,38 +66,40 @@ function spawnWindow(key, config) {
 		width: (config.scale / 100) * config.width,
 		height: (config.scale / 100) * config.height,
 		webPreferences: {
-			preload: path.resolve('preload.js')
+			preload: path.join(__dirname, 'preload.js'),
 		},
 	});
 
 	win.hashId = key;
-	win.loadFile('src/index.html');
 
-	// let timer = 0;
+	if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+		win.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+	} else {
+		win.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+	}
+
+	let timer = 0;
 	win.on('move', () => {
-		// clearTimeout(timer);
-		// timer = setTimeout(() => {
-		// 	console.log('Saving state');
-		// 	const bounds = win.getBounds();
-		// 	store.set(win.hashId, {
-		// 		...config,
-		// 		x: bounds.x,
-		// 		y: bounds.y
-		// 	});
-		// }, 3000);
-
-		const bounds = win.getBounds();
-		store.set(win.hashId, {
-			...config,
-			x: bounds.x,
-			y: bounds.y
-		});
+		clearTimeout(timer);
+		timer = setTimeout(() => {
+			console.log('Saving state');
+			const key = win.hashId;
+			const bounds = win.getBounds();
+			const value = store.get(key);
+			store.set(key, {
+				...value,
+				x: bounds.x,
+				y: bounds.y
+			});
+		}, 3000);
 	});
 
 	win.on('closed', () => {
 		console.log('Window closed for', key);
+		clearTimeout(timer);
+		const value = store.get(key);
 		store.set(key, {
-			...config,
+			...value,
 			active: false
 		});
 		windows.delete(key);
@@ -106,7 +121,7 @@ async function createWindow(fileName) {
 		let height = 200;
 			
 		try {
-			const dimensions = await imageSizeFromFile('files/' + fileName);
+			const dimensions = await imageSizeFromFile(path.join(getFilesDir(), fileName));
 			width = dimensions.width;
 			height = dimensions.height;
 		} catch (error) {
@@ -123,7 +138,7 @@ async function createWindow(fileName) {
 }
 
 function createExistsFileWindow() {
-	fs.readdir('files', (err, files) => {
+	fs.readdir(getFilesDir(), (err, files) => {
 		if (err) {
 			console.error('Error reading files directory:', err);
 			return;
@@ -143,39 +158,47 @@ function createExistsFileWindow() {
 function createMenuWindow() {
 	const menuWin = new BrowserWindow({
 		title: 'Settings',
-		icon: 'assets/icon.ico',
+		icon: 'public/icon.ico',
 		autoHideMenuBar: true,
 		width: 600,
 		height: 800,
 		webPreferences: {
-			preload: path.resolve('menu-preload.js')
+			preload: path.join(__dirname, 'menu-preload.js'),
 		},
 	});
-	menuWin.loadFile('src/menu.html');
+
+	if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+		menuWin.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL + '/menu.html');
+	} else {
+		menuWin.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/menu.html`));
+	}
 }
 
 let tray = null
 app.whenReady().then(() => {
-	tray = new Tray('assets/icon.ico')
-
-	let githubIcon = nativeImage.createFromPath('assets/github.png')
-	githubIcon = githubIcon.resize({ width: 16, height: 16 })
+	const iconPath = process.env.NODE_ENV === 'development'
+    ? path.join('public', 'icon.ico')
+    : path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/icon.ico`);
+	const icon = nativeImage.createFromPath(iconPath);
+	tray = new Tray(icon);
 
 	const contextMenu = Menu.buildFromTemplate([
 		{ label: 'Settings', type: 'normal', click: () => { createMenuWindow() } },
-		{ label: 'GitHub', type: 'normal', icon: githubIcon, click: () => { 
-			shell.openExternal('https://github.com/nopalherlangga')
+		{ label: 'GitHub', type: 'normal', click: () => { 
+			shell.openExternal('https://github.com/nopalherlangga/animg')
 		}},
 		{ type: 'separator' },
 		{ label: 'Close App', type: 'normal', click: () => { app.quit() } },
 	])
-	tray.setToolTip('This is my application.')
-	tray.setContextMenu(contextMenu)
+	tray.setToolTip('Animg');
+	tray.setContextMenu(contextMenu);
 
+	createMenuWindow();
 	createExistsFileWindow();
 
 	app.on('activate', () => {
 		if (BrowserWindow.getAllWindows().length === 0) {
+			createMenuWindow();
 			createExistsFileWindow();
 		}
 	});
@@ -199,7 +222,7 @@ ipcMain.on('request-image', (event, key = null) => {
 		config = store.get(key);
 	}
 
-	const imagePath = 'files/' + config.name;
+	const imagePath = path.join(getFilesDir(), config.name);
 	const imageBuffer = fs.readFileSync(imagePath);
 	const base64Image = imageBuffer.toString('base64');
 	const mimeType = getMimeType(imagePath);
@@ -227,7 +250,7 @@ ipcMain.on('rescale-image', (event, key, scale) => {
 });
 
 ipcMain.on('request-files', event => {
-	let files = fs.readdirSync('files');
+	let files = fs.readdirSync(getFilesDir());
 	files = files.filter(item => !(/(^|\/)\.[^\/\.]/g).test(item));
 	const result = files.map(file => ({ id: getHash(file), name: file }));
 	event.reply('receive-files', result);
@@ -245,10 +268,14 @@ ipcMain.on('toggle-active', (event, key, isActive) => {
 	console.log('Toggling active for', key, 'to', isActive);
 
 	const config = store.get(key);
+	console.log(config)
 	const newConfig = {
 		...config,
 		active: isActive
 	}
+
+	console.log(newConfig)
+	
 	store.set(key, newConfig);
 	const win = windows.get(key);
 	if(isActive) {
@@ -279,12 +306,14 @@ ipcMain.on('select-file', async event => {
 	const filePath = result.filePaths[0];
 	const fileName = path.basename(filePath);
 
-	if(fs.existsSync('files/' + fileName)) {
+	const targetPath = path.join(getFilesDir(), fileName);
+
+	if(fs.existsSync(targetPath)) {
 		event.reply('store-file-error', 'File already exists in the application.');
 		return;
 	}
 
-	fs.copyFileSync(filePath, 'files/' + fileName);
+	fs.copyFileSync(filePath, targetPath);
 
 	event.reply('new-file-stored', {
 		id: getHash(fileName),
@@ -295,7 +324,7 @@ ipcMain.on('select-file', async event => {
 
 ipcMain.on('delete-file', (event, key) => {
 	const config = store.get(key);
-	const filePath = 'files/' + config.name;
+	const filePath = path.join(getFilesDir(), config.name);
 	if(fs.existsSync(filePath)) {
 		fs.unlinkSync(filePath);
 	}
